@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Resultados generados
+data/processed/
+outputs/
+
+# Archivos del sistema
+.DS_Store
+
+# Archivos temporales
+*.tmp
+*.log
