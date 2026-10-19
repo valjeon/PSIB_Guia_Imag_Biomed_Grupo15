@@ -1565,24 +1565,24 @@ def modulo_3():
     # Se utilizará la ROI cuantizada a 32 niveles (5 bits por canal). Esto será útil para que la GLCM sea mucho más chica y que sus estadísticas sean más estables con pocos píxeles.
 
     # %%
-    NIVELES = 32                    # Puedo cambiar niveles para ver que pasa después si lo paso a 64
+    NIVELES = 32                    # niveles de intensidad
     paso = 256 // NIVELES          
 
-    # Cuantización
+    # Cuantización, reducir las intensidades de 0-255 a 0-31
     roi_cuant = (roi_rgb // paso).astype(np.uint8)
     gray_cuant = (roi_gray // paso).astype(np.uint8)
 
     # %% [markdown]
-    # Segmentación de la pupila
     # Usamos la segmentación por Watershed del módulo 2, ya que fue la que mejor delimitó la pupila. Además, sumamos un cierre morfológico, que según la última tabla del mismo módulo fue de las operaciones que menos modificó la máscara.
     # 
-    # A partir de la máscara extraemos el contorno externo de la pupila. Hacemos una función con la segmentación para poder reutilizarla en el video frame a frame.
+    # A partir de la máscara extraemos el contorno externo de la pupila. Hacemos una función con la segmentación para poder reutilizarla en el procesamiento de cada frame del video.
 
     # %%
+    # centro inicial aproximado de la pupila
     center_x, center_y = PUPIL_CENTER
 
     def segmentar_pupila(gris, cx=center_x, cy=center_y, radio=20):
-        """Segmenta la pupila con Watershed. Devuelve la máscara y su contorno externo"""
+        """Segmenta la pupila con Watershed y devuelve su máscara y contorno"""
         # Hago el contraste + suavizado, tal como se hizo en el módulo 2
         contraste = np.clip(gris.astype(np.float32) * 1.5, 0, 255).astype(np.uint8)
         suavizada = cv2.GaussianBlur(contraste, (5, 5), 0)
@@ -1594,6 +1594,7 @@ def modulo_3():
         cv2.ellipse(zona, (int(cx), int(cy)), (60, 55), 0, 0, 360, 1, -1)
         marcadores[zona == 0] = 2
 
+        # Watershed para separar la pupila del entorno
         ws = cv2.watershed(cv2.cvtColor(suavizada, cv2.COLOR_GRAY2BGR), marcadores)
         mascara = (ws == 1).astype(np.uint8) * 255
 
@@ -1625,11 +1626,11 @@ def modulo_3():
     plt.show()
 
     # %% [markdown]
-    # A continuación se calculará el área, que representa la cantidad de píxeles de la máscara, el perímetro, que es la longitud del borde de la región, las coordenadas del centroide, la circularidad y la excentricidad.
+    # A continuación se calculará, a partir del contorno de la pupila, el área, perímetro, centroide, circularidad, excentricidad y ejes de la elipse ajustada
 
     # %%
     def descriptores_morfometricos(contorno):
-        """Área, perímetro, centroide, circularidad y excentricidad de una máscara binaria."""
+        """Área, perímetro, centroide, circularidad y excentricidad del contorno."""
         area = cv2.contourArea(contorno)
         perimetro = cv2.arcLength(contorno, True)
 
@@ -1638,7 +1639,7 @@ def modulo_3():
         xc = m["m10"] / m["m00"]
         yc = m["m01"] / m["m00"]
 
-        # Elipse que mejor se ajusta al contorno: de acá salen los ejes y la excentricidad
+        # Elipse que mejor se ajuste al contorno para obtener sus ejes
         elipse = cv2.fitEllipse(contorno)
         (_, _), (d1, d2), angulo = elipse
         eje_mayor, eje_menor = max(d1, d2), min(d1, d2)
@@ -1686,13 +1687,15 @@ def modulo_3():
     # %% [markdown]
     # A continuación, se calculará la media, desvío estándar, entropía y asimetría sobre la ROI de la pupila y el iris en los 3 canales de colores (RGB) de forma independiente.
     # 
-    # Para analizar la textura del iris lo segmentamos también por Watershed, con tres marcadores: iris seguro (un anillo cercano a la pupila), pupila segura y fondo seguro (todo lo que queda fuera de una elipse grande). Esta segmentación se usa solo para el análisis de textura del frame de referencia, por lo que no se aplican correcciones adicionales, y se verifica visualmente que sea aproximadamente correcta.
+    # Para obtener una máscara aproximada del iris en el frame de referencia, se aplica Watershed utilizando tres marcadores: iris seguro (un anillo alrededor de la pupila), pupila segura y fondo seguro (todo lo que queda fuera de una elipse grande). 
+    # 
+    # La máscara obtenida se utilizará para calcular las estadísticas de intensidad y textura, y su delimitación se verificará visualmente.
 
     # %%
-    # Parámetros de los marcadores
-    ANILLO_INT, ANILLO_EXT = 6, 12   # iris "seguro": anillo entre estas dos distancias (px) al borde de la pupila
-    FONDO_RX, FONDO_RY = 78, 70      # semiejes (px) de la elipse: fuera de ella es fondo seguro
-    Y_PARPADO = 10                   # filas de arriba de la ROI que se consideran fondo (pestañas / párpado)
+    # Parámetros de los marcadores, en píxeles
+    ANILLO_INT, ANILLO_EXT = 6, 12   # radios que delimitan el anillo del iris "seguro"
+    FONDO_RX, FONDO_RY = 78, 70      # semiejes de la elipse que delimita el fondo seguro
+    Y_PARPADO = 10                   # franja superior que se considera fondo seguro
 
     cx, cy = int(round(desc["Centroide X_c (px)"])), int(round(desc["Centroide Y_c (px)"]))
 
@@ -1725,9 +1728,13 @@ def modulo_3():
     plt.show()
 
     # %%
-    # Watershed sobre la ROI suavizada
+    # Suavizar la imagen antes de aplicar Watershed
     roi_suavizada_iris = cv2.GaussianBlur(roi_gray, (5, 5), 0)
+
+    # Los marcadores se copian para conservar la matriz original
     ws_iris = cv2.watershed(cv2.cvtColor(roi_suavizada_iris, cv2.COLOR_GRAY2BGR), marcadores_iris.copy())
+
+    #Conservar únicamente la región etiquetada como iris
     mask_iris = (ws_iris == 1).astype(np.uint8) * 255
 
     plt.figure(figsize=(14, 5))
@@ -1751,20 +1758,20 @@ def modulo_3():
     print("Píxeles del iris:    ", cv2.countNonZero(mask_iris))
 
     # %% [markdown]
-    # Para evitar errores en los cálculos estadísticos, se deben excluir los reflejos brillantes que se observan en el iris.
+    # Los reflejos brillantes que se observan en el iris pueden causar errores en los cálculos estadísticos. Para reducir su influencia, se identifican los píxeles más claros mediante un umbral de intensidad y se amplia levemente la región detectada para excluir también los píxeles cercanos. Los píxeles detectados se eliminan de la máscara del iris antes de hacer los cálculos estadísticos.
 
     # %%
     UMBRAL_BRILLO = 205   # nivel de gris a partir del cual un píxel se considera reflejo
 
-    # Para elegir el umbral: cómo son los valores del iris
-    valores_iris = roi_gray[mask_iris > 0]
-    print("Iris: mediana =", int(np.median(valores_iris)), "| percentil 99 =", int(np.percentile(valores_iris, 99)), "| máximo =", int(valores_iris.max()))
-
-    # Reflejos: píxeles muy claros, con un pequeño margen alrededor
+    # Detectar píxeles muy brillantes y ampliar ligeramente las regiones detectadas
     _, mask_brillo = cv2.threshold(roi_gray, UMBRAL_BRILLO, 255, cv2.THRESH_BINARY)
-    mask_brillo = cv2.dilate(mask_brillo, np.ones((5, 5), np.uint8))
+    kernel_brillo = np.ones((5, 5), np.uint8)
+    mask_brillo = cv2.dilate(mask_brillo, kernel_brillo)
 
-    # Iris sin reflejos
+    #Reflejos detectados dentro del iris
+    mask_reflejos_iris = cv2.bitwise_and(mask_iris, mask_brillo)
+
+    # Eliminar los reflejos de la máscara del iris 
     mask_iris_sin_brillo = cv2.bitwise_and(mask_iris, cv2.bitwise_not(mask_brillo))
 
     plt.figure(figsize=(14, 5))
@@ -1772,8 +1779,8 @@ def modulo_3():
     plt.subplot(1, 2, 1)
     plt.imshow(roi_rgb)
     plt.contour(mask_iris > 0, colors="c", linewidths=1.5)
-    plt.contour(mask_brillo > 0, colors="m", linewidths=1.5)
-    plt.title("Iris (cian) y reflejos excluidos (magenta)")
+    plt.contour(mask_reflejos_iris > 0, colors="m", linewidths=1.5)
+    plt.title("Iris (cian) y reflejos detectados (magenta)")
     plt.axis("off")
 
     plt.subplot(1, 2, 2)
@@ -1825,26 +1832,33 @@ def modulo_3():
     display(stats_iris.round(3))
 
     # %% [markdown]
-    # La pupila es más oscura y uniforme que el iris: sus medias están entre 2.5 y 3.2, contra cerca de 10 en el iris, y tiene menor desvío y entropía, lo cual es lo esperable, ya que el estroma iridiano presenta más variación de intensidad que la pupila.
+    # La pupila tiene intensidades medias menores que el iris (es más oscura), junto con un desvío y entropía también menores (sus intensidades se concentran en una menor variedad de niveles cuantizados).
     # 
-    # La asimetría de la pupila es positiva y alta (2.3 a 2.7), probablemente por el reflejo del flash, que no se excluyó en esa región. En el iris es casi nula, por lo que la distribución de intensidades es aproximadamente simétrica.
+    # La asimetría de la pupila es positiva y alta, lo que indica una distribución con una cola hacia las intensidades más altas. Esto podría estar relacionado con el flash, que puede no haberse podido excluir de esta región.
     # 
-    # Entre canales las diferencias son pequeñas. En la pupila el canal B es algo más claro, y en el iris los tres canales tienen medias, desvíos y entropías muy parecidos.
+    # Entre los canales RGB, las diferencias son pequeñas. En el iris, el canal B presenta una media levemente menor que los otros dos canales, mientras que las entropías son muy similares.
 
     # %% [markdown]
-    # La GLCM cuenta con qué frecuencia aparece un nivel de gris `i` junto a un nivel `j` a una distancia y dirección dadas. Así describe la relación espacial entre píxeles. Los atributos se calculan por canal y se promedian sobre los 4 ángulos.
+    # La GLCM describe la frecuencia con la que aparecen pares de intensidades cuantizadas a una distancia y dirección determinadas. Se calcula por separado para cada canal RGB, con una distancia de 1 píxel y cuatro direcciones:  0°, 45°, 90°, 180°.
+    # 
+    # A partir de las matrices se calculan el contraste, la homogeneidad, la energía y la correlación. Para obtener un valor por canal, estos parámetros se promedian sobre las cuatro direcciones.
 
     # %%
     DISTANCIAS = [1]
     ANGULOS = [0, np.pi/4, np.pi/2, 3*np.pi/4]
 
     def glcm_mascara(canal, mascara, niveles=NIVELES):
+        # Reservar un nivel adicional para identificar el exterior de la máscara
         img = canal.copy()
-        img[mascara == 0] = niveles                      # nivel extra = "fuera de la región"
+        img[mascara == 0] = niveles
         glcm = graycomatrix(img, distances=DISTANCIAS, angles=ANGULOS,
                             levels=niveles + 1, symmetric=True, normed=False)
-        glcm = glcm[:niveles, :niveles].astype(float)    # se descarta el nivel de fondo
-        glcm /= glcm.sum(axis=(0, 1), keepdims=True)     # se renormaliza
+
+        # Eliminar el nivel adicional: quedan las GLCM dentro de la región
+        glcm = glcm[:niveles, :niveles].astype(float)
+
+        # Normalizar las matrices para trabajar con frecuencias relativas
+        glcm /= glcm.sum(axis=(0, 1), keepdims=True)
         return glcm
 
     def atributos_glcm(glcm):
@@ -1853,6 +1867,7 @@ def modulo_3():
         return {nombre: graycoprops(glcm, p).mean() for nombre, p in props.items()}
 
     # %%
+    # Calcular las GLCM y sus atributos para cada canal y región
     glcms = {}
     filas_pupila, filas_iris = {}, {}
 
@@ -1872,35 +1887,39 @@ def modulo_3():
     display(glcm_iris.round(4))
 
     # %%
+    # Visualizar la GLCM del iris para cada canal, a 0°
     fig, axs = plt.subplots(1, 3, figsize=(15, 4))
+
     for ax, canal in zip(axs, "RGB"):
         im = ax.imshow(glcms[("Iris", canal)][:, :, 0, 0], cmap="Reds")
         ax.set_title(f"GLCM iris – canal {canal} (0°)")
         ax.set_xlabel("Nivel j"); ax.set_ylabel("Nivel i")
         plt.colorbar(im, ax=ax, fraction=0.046)
+
     plt.tight_layout()
     plt.show()
 
     # %% [markdown]
-    # En el iris, los tres canales dan valores de GLCM muy parecidos. Las GLCM de la figura se concentran sobre la diagonal, con niveles de gris vecinos, lo que indica una textura suave, con variaciones graduales entre píxeles. Esto coincide con la correlación y homogeneidad alta.
+    # Las GLCM del iris presentan patrones similares en los 3 canales. Se observa que los valores de la GLCM se concentran cerca de la diagonal, lo que indica que los píxeles vecinos suelen tener niveles de intensidad similares, lo cual es consistente con los valores altos de homogeneidad y correlación obtenidos.
     # 
-    # Entre canales, R muestra mayor contraste (0.563) y menor homogeneidad (0.806). G tiene la energía más baja (0.2087) y la correlación más alta (0.974), y B tiene la mayor energía (0.213), es decir, es el más uniforme. Las diferencias son pcas, por lo que ningún canal aporta una riqueza textural claramente mayor. Sin embargo, podemos decir que R es el más informativo, debido al mayor contraste y menor homogeneidad.
+    # En cuanto a la riqueza textural del estroma iridiano, el canal R presenta el mayor contraste y la menor homogeneidad entre los 3 canales. Esto muestra que, en este canal, las intensidades de píxeles vecinos tienen variaciones más marcadas, por lo que puede considerarse que es el que muestra mayor riqueza textural.
     # 
-    # La pupila es más homogénea y tiene mayor energía que el iris, como se espera de una región más uniforme y oscura. Su contraste es similar al del iris, probablemente por los bordes y el brillo que quedaron dentro de la máscara.
+    # En comparación con el iris, la pupila presenta mayor homogeneidad y energía, aunque su contraste es similar. Esto indica que los valores de la GLCM de la pupila están más concentrados y tienen una mayor proporción de transiciones entre niveles similares.
 
     # %% [markdown]
-    # A continuación aplicaremos a cada frame del video el mismo procedimiento que se hizo para segmentar la pupila con un solo frame. Esto implica recorte de la ROI, conversión a gris y segmentación de la pupila por Watershed con cierre morfológico.
+    # A continuación, se aplicará a cada frame del video el procedimiento de segmentación de la pupila desarrollado en el módulo 2, adaptado para procesar una secuencia de imágenes. Esto implica el recorte de una ROI, la conversión a escala de grises y la segmentación mediante Watershed con cierre morfológico.
     # 
-    # De cada contorno se obtienen el área y el diámetro.
+    # A partir del contorno obtenido en cada frame, se calcularán el área y el diámetro de la pupila, lo que permite analizar su evolución a lo largo del video.
 
     # %% [markdown]
-    # Para segmentar la pupila en cada frame del video se parte del método del módulo 2 (Watershed sobre la ROI con contraste ×1.5 y suavizado gaussiano de 5x5, marcadores de pupila y de fondo, y cierre morfológico), pero no alcanza con aplicarlo tal cual. En el módulo 2 se trabajó con un único frame de referencia y una ROI fija, mientras que en el video la pupila se mueve, cambia de tamaño y aparecen reflejos del flash y pestañas. Por eso se hicieron algunas modificaciones.
+    # Para segmentar la pupila en cada frame, se parte del método desarrollado en el módulo 2 (Watershed sobre la ROI con contraste ×1.5 y suavizado gaussiano de 5x5, marcadores de pupila y de fondo, y cierre morfológico). Sin embargo, en el video es necesario adaptar el procedimiento, ya que la pupila cambia de posición y tamaño, y pueden aparecer reflejos del flash y obstrucciones por las pestañas.
     # 
-    # - En el video, el centro de la pupila se estima frame a frame, por lo que se usa una ventana de búsqueda alrededor de la posición del frame anterior y la ROI de 320x130 px se recorta centrada en ese punto.
-    # - Los píxeles muy brillantes cercanos a la pupila se detectan, se dilatan y se rellenan con los píxeles de alrededor.
-    # - El marcador de pupila segura pasa de un círculo de radio 20 a uno de radio 10 como valor base, para que la semilla quede dentro de la pupila aun cuando se contrae.
+    # Las principales modificaciones son:
+    # - Se estima el centro de la pupila en cada frame mediante una ventana de búsqueda alrededor de la posición anterior. A partir de ese centro se define la ROI.
+    # - Se identifican y atenúan las regiones brillantes cercanas a la pupila para reducir su influencia sobre la segmentación.
+    # - Se utiliza un círculo de radio 10 píxeles como semilla inicial, en lugar del radio 20 utilizado anteriormente, lo que permite adaptar el marcador a las contracciones de la pupila.
     # - Con ese radio, en algunos frames (por ejemplo cuando se ve el reflejo en la pupila), el Watershed no atraviesa la franja clara y el contorno queda más chico que la pupila. Por eso, además del radio base, se prueban radios de 16 y 22 px y se compara el contraste de borde de cada contorno. Un contorno correcto tiene pupila (oscuro) adentro e iris (claro) afuera, por lo que su contraste es alto.
-    # - Se mantiene el cierre de 5x5 dentro de la segmentación y después se agrega una apertura de 11x11 (corta colitas finas producidas por reflejos sobre el borde o pestañas), un cierre de 21x21 (rellena huecos) y la envolvente convexa del contorno.
+    # - Se mantiene el cierre de 5x5 utilizado durante la segmentación. Luego, se aplica una apertura de 11x11 para eliminar prolongaciones finas, un cierre de 21x21 para rellenar pequeños huecos y, finalmente, la envolvente convexa del contorno para regularizar su forma.
 
     # %%
     X0, Y0, ROI_W, ROI_H = ROI_RECT     # rectángulo seleccionado en el menú
@@ -1914,10 +1933,13 @@ def modulo_3():
     print(f"FPS: {fps:.2f} | Frames: {n_frames} | Duración: {n_frames / fps:.2f} s")
 
     # %%
-    RADIO_BUSQUEDA = 80          # ventana de búsqueda alrededor de la pupila del frame anterior (px)
+    # Parámetros para localizar el centro de la pupila
+    RADIO_BUSQUEDA = 80
     RADIO_BUSQUEDA_INICIAL = 150 # para el primer frame
     MARGEN_OSCURO = 15
-    KERNEL_SUAVIZADO = 31        # el suavizado borra pestañas y reflejos
+
+    # Kernels para atenuar reflejos y suavizar la imagen
+    KERNEL_SUAVIZADO = 31
     KERNEL_REFLEJO = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
 
     def seguir_pupila(frame_bgr, centro_previo, radio_busqueda=RADIO_BUSQUEDA):
@@ -1941,6 +1963,9 @@ def modulo_3():
     centro = (X0 + center_x, Y0 + center_y)
     centros = []
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+    # Se estima el centro de la pupila en cada frame y se almacenan las coordenadas
+    # para utilizarlas en las etapas siguientes
     for i in range(n_frames):
         ok, frame = cap.read()
         if not ok:
@@ -1952,6 +1977,8 @@ def modulo_3():
     centros = np.array(centros, dtype=float)
 
     # %%
+    # Recorta la ROI alrededor de la posición estimada y devuelve el centro expresado
+    # en coordenadas relativas a la ROI
     def recortar_roi(frame_bgr, centro):
         """Recorta una ROI de 320x130 con la pupila en (center_x, center_y), como en el módulo 1."""
         h, w = frame_bgr.shape[:2]
@@ -1961,8 +1988,11 @@ def modulo_3():
         return roi, (centro[0] - x0, centro[1] - y0)      # centro dentro de la ROI
 
     # %%
+    # Parámetros para detectar reflejos brillantes próximos a la pupila
     UMBRAL_REFLEJO = 200
-    RADIO_ZONA_REFLEJO = 45     # los reflejos se buscan solo cerca de la pupila
+    RADIO_ZONA_REFLEJO = 45
+
+    # Se amplía la máscara para incluir los bordes de los reflejos
     KERNEL_DILATAR_REFLEJO = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
 
     def quitar_reflejos(gris, cx, cy):
@@ -1975,7 +2005,10 @@ def modulo_3():
         return cv2.inpaint(gris, brillo, 5, cv2.INPAINT_TELEA)
 
     # %%
+    # Radios posibles para el marcador inicial de Watershed
     RADIOS_MARCADOR = (10, 16, 22)
+
+    # Kernels para eliminar prolongaciones finas y rellenar huecos
     MARGEN_CONTRASTE = 8
     KERNEL_COLITAS = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
     KERNEL_CIERRE = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
@@ -2009,6 +2042,8 @@ def modulo_3():
         if mejor is None:
             return None
         mejor_c = contraste_borde(limpia, mejor)
+        # Se prueban los distintos radios y se conserva el contorno que
+        # mejora suficientemente el contraste del borde
         for radio in RADIOS_MARCADOR[1:]:
             cand = contorno_con_marcador(limpia, cx, cy, radio)
             if cand is None:
@@ -2020,6 +2055,7 @@ def modulo_3():
 
     # %%
     def circularidad(contorno):
+        """Mide qué tan circular es el contorno: se aproxima a 1 para una circunferencia ideal"""
         area = cv2.contourArea(contorno)
         perimetro = cv2.arcLength(contorno, True)
         return 4 * np.pi * area / perimetro**2
@@ -2029,6 +2065,7 @@ def modulo_3():
     # Como verificación de que la segmentación generaliza a todo el video, se evalúa en 12 frames.
 
     # %%
+    # Selección de frames distribuidos
     indices = np.linspace(0, n_frames - 1, 12).astype(int)
 
     fig, axs = plt.subplots(3, 4, figsize=(18, 8))
@@ -2053,13 +2090,14 @@ def modulo_3():
     plt.show()
 
     # %% [markdown]
-    # Se observa que la segmentación planteada se puede generalizar correctamente para los frames del video, con algunas excepciones, como por ejemplo el frame 955, donde posiblemente se encuentren errores de segmentación por parpadeo u otros artefactos.
+    # La visualización de distintos frames permite evaluar el comportamiento del método de segmentación a lo largo del video. Se busca que el contorno obtenido se ajuste a la pupila, aunque pueden aparecer errores en algunos frames debido a parpadeos, reflejos u otros artefactos.
     # 
-    # Para poder estimar si se realizó correctamente la segmentación de un frame, se utiliza el parámetro de circularidad. A continuación se muestra un gráfico de la evolución de este parámetro a lo largo del video.
+    # Para complementar la evaluación visual, se utiliza el parámetro de circularidad. La evolución de este parámetro a lo largo del video puede ayudar a identificar frames con posibles errores de segmentación. Este parámetro se usa como indicador complementario, no como una medida definitiva de la calidad del contorno.
 
     # %%
+    # Circularidad frame a frame
     filas = []
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)     # volver al primer frame
     for i in range(n_frames):
         ok, frame = cap.read()
         if not ok or np.isnan(centros[i, 0]):
@@ -2070,6 +2108,7 @@ def modulo_3():
 
     df = pd.DataFrame(filas, columns=["frame", "t (s)", "Circularidad"])
 
+    # Evolución temporal
     plt.figure(figsize=(12, 3))
     plt.plot(df["t (s)"], df["Circularidad"], linewidth=0.8)
     plt.xlabel("Tiempo (s)"); plt.ylabel("Circularidad")
@@ -2077,7 +2116,7 @@ def modulo_3():
     plt.show()
 
     # %% [markdown]
-    # Se observa que la circularidad del contorno tiene leves variaciones a lo largo del video. Los picos y variaciones muy grandes seguramente se deben a parpadeos o movimientos (artefactos). Para el análisis estadístico de algunos parámetros conviene excluir esos frames o interpolar los valores. Para esto, se considerarán frames invalidos a aquellos con un circularidad menor a 0.89, ya que se considera que en esos casos probablemente no se segmentó bien la pupila por algun artefacto.
+    # La circularidad se mantiene aproximadamente constante, con caídas puntuales que probablemente corresponden a parpadeos o movimientos (artefactos). Se consideran inválidos los frames con circularidad < 0,89, ya que por debajo de ese valor los contornos de los frames analizados dejan de ajustarse a la pupila. Estos frames se excluyen del análisis y se reemplazan por interpolación.
 
     # %%
     UMBRAL_CIRC = 0.89
@@ -2098,8 +2137,6 @@ def modulo_3():
     # A continuación se calculará el área y el diametro frame a frame.
 
     # %%
-    UMBRAL_CIRC = 0.89
-
     filas = []
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
     for i in range(n_frames):
@@ -2111,24 +2148,32 @@ def modulo_3():
         if contorno is None:
             filas.append((i, i / fps, np.nan, np.nan, np.nan)); continue
         area = cv2.contourArea(contorno)
-        filas.append((i, i / fps, area, 2 * np.sqrt(area / np.pi), circularidad(contorno)))
+        diametro = 2 * np.sqrt(area / np.pi)
+        filas.append((i, i / fps, area, diametro, circularidad(contorno)))
 
     df = pd.DataFrame(filas, columns=["frame", "t (s)", "Área auto (px²)", "Diámetro auto (px)", "Circularidad"])
     df["Válido"] = df["Circularidad"] >= UMBRAL_CIRC            # NaN queda como inválido
 
+    # Se anulan los valores inválidos y se rellenan por interpolación lineal
+    # También se rellenan los extremos
     df["Área (px²)"] = df["Área auto (px²)"].where(df["Válido"]).interpolate(method="linear", limit_direction="both")
     df["Diámetro (px)"] = df["Diámetro auto (px)"].where(df["Válido"]).interpolate(method="linear", limit_direction="both")
     df["Interpolado"] = ~df["Válido"]
 
     inv = ~df["Válido"]
+
+    # Se cuenta el largo de cada grupo inválido para saber cuántos frames seguidos se interpolaron
     rachas = inv.ne(inv.shift()).cumsum()[inv].value_counts()
     print(f"Frames interpolados: {inv.sum()} de {len(df)} ({100 * inv.mean():.1f} %) | racha más larga: {rachas.max()} frames ({rachas.max() / fps:.2f} s)")
 
+    # %% [markdown]
+    # A continuación se anotan 15 frames equiespaciados, en cada uno se marcan manualmente al menos 5 puntos del borde de la pupila y se ajusta una elipse. Estos datos se guardan en CSV y se compara con los datos tomados de la segmentación automática.
+
     # %%
     import os
-    ANOT_PATH = "../data/reference/anotaciones_manuales.csv"
+    ANOT_PATH = BASE_DIR / "data" / "reference" / "anotaciones_manuales.csv"
     ESCALA = 4
-    frames_manual = np.linspace(0, n_frames - 1, 25).astype(int)
+    frames_manual = np.linspace(0, n_frames - 1, 15).astype(int)
 
     def anotar_frame(idx):
         cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx)); ok, frame = cap.read()
@@ -2164,6 +2209,7 @@ def modulo_3():
             manual.loc[len(manual)] = [idx, *res]
             manual.to_csv(ANOT_PATH, index=False)
 
+    # %%
     manual = pd.read_csv(ANOT_PATH)
     manual = manual[manual["frame"].isin(frames_manual)]
     comp = manual.merge(df, on="frame")
@@ -2180,24 +2226,40 @@ def modulo_3():
     display(tabla.round(2))
 
     fig, axs = plt.subplots(1, 2, figsize=(11, 4.5))
-    for ax, (auto, man, nombre) in zip(axs, [("Área (px²)", "Área manual (px²)", "Área (px²)"),
-                                             ("Diámetro (px)", "Diámetro manual (px)", "Diámetro (px)")]):
+    for ax, (auto, man) in zip(axs, [("Área (px²)", "Área manual (px²)"),
+                                    ("Diámetro (px)", "Diámetro manual (px)")]):
         ax.scatter(comp[man], comp[auto], c=np.where(comp["Interpolado"], "tab:red", "tab:blue"), s=20)
         lim = [min(comp[man].min(), comp[auto].min()), max(comp[man].max(), comp[auto].max())]
         ax.plot(lim, lim, "k--", linewidth=0.8)
-        ax.set_xlabel(f"{nombre} manual"); ax.set_ylabel(f"{nombre} automático"); ax.set_title(nombre)
+        ax.set_xlabel(f"{auto} manual"); ax.set_ylabel(f"{auto} automático"); ax.set_title(auto)
     plt.tight_layout(); plt.show()
 
-    # La segmentación automática concuerda bien con la medición manual en los 25 frames anotados: el error medio es de 2.6% en el diámetro y de 5.3% en el área, con un sesgo pequeño. El único punto que se aleja de la diagonal corresponde a un frame interpolado. Se considera que la segmentación es adecuada para calcular las curvas temporales.
+    # %%
+    d, a = tabla.loc["Diámetro (px)"], tabla.loc["Área (px²)"]
+    # Punto con mayor error en diámetro y si corresponde a un frame interpolado
+    peor = comp.loc[(comp["Diámetro (px)"] - comp["Diámetro manual (px)"]).abs().idxmax()]
 
+    print(
+        f"Con {int(d['n'])} frames anotados, el error relativo medio es "
+        f"{d['Error relativo medio (%)']:.1f} % en el diámetro y "
+        f"{a['Error relativo medio (%)']:.1f} % en el área. "
+        f"El sesgo (auto−manual) es {d['Sesgo (auto−manual)']:.2f} px en el diámetro. "
+        f"El frame con mayor error es el {int(peor['frame'])} "
+        f"({'interpolado' if peor['Interpolado'] else 'no interpolado'})."
+    )
+
+    # %% [markdown]
+    # La segmentación automática concuerda con la medición manual en los frames anotados: los errores porcentuales son bajos y el sesgo es pequeño (ver valores arriba). Se considera que la segmentación es adecuada para calcular las curvas temporales.
+
+    # %% [markdown]
     # A continuación se grafican el diámetro D(t) y el área A(t) de la pupila a lo largo del video. En rojo se marcan los frames que se interpolaron.
 
+    # %%
     fig, axs = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
 
-    for ax, col in [(axs[0], "Diámetro (px)"),
-                             (axs[1], "Área (px²)")]:
+    interp = df[df["Interpolado"]]
+    for ax, col in zip(axs, ["Diámetro (px)", "Área (px²)"]):
         ax.plot(df["t (s)"], df[col], linewidth=0.9, label="Automático")
-        interp = df[df["Interpolado"]]
         ax.scatter(interp["t (s)"], interp[col], color="r", s=10, zorder=3, label="Interpolado")
         ax.set_ylabel(col)
         ax.grid(alpha=0.3)
@@ -2208,156 +2270,212 @@ def modulo_3():
     plt.tight_layout()
     plt.show()
 
-    # En la curva se observa que el diámetro de la pupila se mantiene en torno a 55–60 px (área de ~2500 px²) durante los primeros ~21 s y luego disminuye de forma marcada, hasta estabilizarse en ~35 px (área de ~1000 px²) a partir de los ~23 s. Esta caída corresponde a la contracción de la pupila. Los picos aislados, probablemente se deban a artefactos u otros ruidos no detectados anteriormente por el criterio de circularidad, como parpadeos o errores puntuales de segmentación.
+    # %% [markdown]
+    # En la curva se observa que el diámetro de la pupila se mantiene en torno a 55–60 px (área de ~2500 px²) durante los primeros ~21 s y luego disminuye de forma marcada, hasta estabilizarse en ~35 px (área de ~1000 px²) a partir de los ~23 s. Esta caída corresponde a la constricción de la pupila. Los picos aislados, probablemente se deban a artefactos u otros ruidos no detectados anteriormente por el criterio de circularidad, como parpadeos o errores puntuales de segmentación.
 
-    # Para calcular el tiempo de latencia, buscamos el intervalo entre la aplicación del flash y el inicio de la constricción de la pupila.
-    # El instante del estímulo se detecta como el salto de brillo del video, y el inicio de la constricción como el primer instante en que el diámetro cae por debajo de la línea de base previa al estímulo y se mantiene por debajo durante 5 frames consecutivos.
+    # %% [markdown]
+    # Para calcular la latencia, buscamos el intervalo entre la aplicación del flash y el inicio de la constricción de la pupila.
+    # El inicio del estímulo se detecta como el instante en el que el brillo medio del video supera el 10% de su subida total, y el inicio de la constricción como el primer instante en que el diámetro cae más de un 10% por debajo de la línea de la mediana de todo el tramo previo al estímulo y se mantiene así durante 5 frames consecutivos.
+    # 
+    # La amplitud es la diferencia entre el área basal y el área mínima de la serie suavizada.
+    # 
+    # El mismo criterio de inicio (desviación del 10% sostenida durante 5 frames) se aplica tanto a la velocidad de constricción como para la de redilatación.
+    # 
+    # Este criterio se aplica porque no produce falsos inicios en el tramo previo al estímulo en ninguno de los registros, mientras que umbrales menores (5% o 2σ) detectan falsas constricciones
 
-    T_ESTIMULO = None
+    # %%
+    FRAC_INICIO = 0.10     # el inicio de un cambio (constricción o redilatación) es una desviación del 10 % respecto del nivel previo
+    N_SOSTENIDO = 5
+    VENT_MIN = 15
 
-    # Brillo medio de cada frame
-    brillo = []
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    for i in range(n_frames):
-        ok, frame = cap.read()
-        if not ok:
-            brillo.append(np.nan); continue
-        chico = cv2.resize(frame, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
-        brillo.append(cv2.mean(cv2.cvtColor(chico, cv2.COLOR_BGR2GRAY))[0])
-    df["Brillo"] = brillo
+    def inicio_cambio(d, i_ini, nivel_ref, frac=FRAC_INICIO, sentido=-1, n_sostenido=N_SOSTENIDO):
+        """Primer frame desde i_ini que abre una racha de n_sostenido frames con el diámetro apartado más de
+        frac del nivel de referencia. sentido=-1: caída (constricción); sentido=+1: subida (redilatación)."""
+        umbral = nivel_ref * (1 + sentido * frac)
+        fuera = d < umbral if sentido < 0 else d > umbral
+        for i in range(i_ini, len(d) - n_sostenido + 1):
+            if fuera[i:i + n_sostenido].all():
+                return i
+        return None
 
-    b = df["Brillo"].rolling(5, center=True, min_periods=1).median()
-    salto = b.diff(5).abs()
-    i_pico = int(salto.idxmax())
+    # %%
+    def detectar_estimulo(df_v, cap_v, n_frames_v):
+        """Frame aproximado del estímulo (referencia para inicio_rampa, que fija el instante exacto con el criterio del 10%). Agrega la columna 'Brillo' a df_v."""
+        # Brillo medio de cada frame
+        brillo = []
+        cap_v.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        for i in range(n_frames_v):
+            ok, frame = cap_v.read()
+            if not ok:
+                brillo.append(np.nan); continue
+            chico = cv2.resize(frame, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
+            brillo.append(cv2.mean(cv2.cvtColor(chico, cv2.COLOR_BGR2GRAY))[0])
+        df_v["Brillo"] = brillo
 
-    base = df["Brillo"].iloc[max(0, i_pico - 60): i_pico - 10]
-    mu, sd = base.median(), base.std()
-    umbral = mu + max(3 * sd, 0.05 * (df["Brillo"].iloc[i_pico] - mu))
+        # Frame del mayor salto de brillo
+        b = df_v["Brillo"].rolling(5, center=True, min_periods=1).median()
+        salto = b.diff(5).abs()
+        i_pico = int(salto.idxmax())
 
-    ini = max(0, i_pico - 15)
-    i_estimulo = ini + int(np.argmax(df["Brillo"].iloc[ini:i_pico + 1].values > umbral))
+        # Estadísticas del brillo previo al flash
+        base = df_v["Brillo"].iloc[max(0, i_pico - 60): i_pico - 10]
+        mu, sd = base.median(), base.std()
 
-    if T_ESTIMULO is None:
-        T_ESTIMULO = df.loc[i_estimulo, "t (s)"]
-    print(f"Frame del estímulo: {i_estimulo} | t = {T_ESTIMULO:.3f} s")
+        # Umbral de brillo
+        umbral = mu + max(3 * sd, 0.05 * (df_v["Brillo"].iloc[i_pico] - mu))
 
-    # Gráfico general
-    fig, axs = plt.subplots(2, 1, figsize=(12, 5), sharex=True)
-    axs[0].plot(df["t (s)"], df["Brillo"], linewidth=0.9); axs[0].set_ylabel("Brillo medio del frame")
-    axs[1].plot(df["t (s)"], df["Diámetro (px)"], linewidth=0.9); axs[1].set_ylabel("Diámetro (px)")
-    for ax in axs:
-        ax.axvline(T_ESTIMULO, color="r", linestyle="--", linewidth=0.9); ax.grid(alpha=0.3)
-    axs[1].set_xlabel("Tiempo (s)")
-    plt.tight_layout(); plt.show()
+        # Primer frame que supera ese umbral en la ventana de 15 frames
+        ini = max(0, i_pico - 15)
+        return ini + int(np.argmax(df_v["Brillo"].iloc[ini:i_pico + 1].values > umbral))
 
-    N_SOSTENIDO = 5          # frames consecutivos por debajo de la línea base
-    VENTANA_BASE_S = 2.0     # segundos previos al estímulo para estimar la línea base
-    K_SIGMA = 3              # cuántos desvíos por debajo de la base cuenta como "caída"
+    # %%
+    def inicio_rampa(df_v, fps_v, i_ref, frac=0.10):
+        """Frame en que el brillo supera frac (p. ej. 10 %) de su subida total, buscando hacia atrás desde el 50 % de la subida.
+        i_ref: frame aproximado del estímulo (el que devuelve detectar_estimulo)."""
+        b = df_v["Brillo"].rolling(3, center=True, min_periods=1).median().values
+        n1, n3, n15 = int(round(fps_v)), int(round(3 * fps_v)), int(round(1.5 * fps_v))
+        base = np.median(b[i_ref - n3: i_ref - n1])                  # nivel previo al flash (entre 3 s y 1 s antes)
+        pico = b[i_ref: i_ref + n15].max()
 
-    d = df["Diámetro (px)"].values
+        # Primer frame donde el brillo llega al 50% de la subida
+        i50 = i_ref - n1 + int(np.argmax(b[i_ref - n1: i_ref + n15] >= base + 0.5 * (pico - base)))
+        i = i50
 
-    # Línea base de diámetro
-    n_base = int(round(VENTANA_BASE_S * fps))
-    base_d = d[max(0, i_estimulo - n_base): i_estimulo]
-    mu_d, sd_d = np.nanmedian(base_d), np.nanstd(base_d)
-    umbral_d = mu_d - K_SIGMA * sd_d
+        # Retrocede hasta cruzar el 10%
+        while i > 0 and b[i] > base + frac * (pico - base):
+            i -= 1
+        return i + 1
 
-    # Primer frame desde el estímulo
-    debajo = d < umbral_d
-    i_constr = None
-    for i in range(i_estimulo, n_frames - N_SOSTENIDO + 1):
-        if debajo[i:i + N_SOSTENIDO].all():
-            i_constr = i          
-            break
+    # %%
+    def analizar_registro(df_v, cap_v, fps_v, i_estimulo=None, frac_caida=FRAC_INICIO, frac_rampa=0.10,
+                          n_sostenido=N_SOSTENIDO, vent_min=VENT_MIN):
+        """Estímulo, latencia y amplitud de un registro, con los mismos criterios para cualquier video.
+        Requiere las columnas 't (s)', 'Diámetro (px)' y 'Área (px²)' de df_v (salida de procesar_video).
+        i_estimulo: frame aproximado del estímulo (el de detectar_estimulo); si es None se detecta acá."""
+        n_v = len(df_v)
 
-    if i_constr is None:
-        print("No se detectó constricción sostenida después del estímulo.")
+        # Estímulo: frame aproximado por salto de brillo -> inicio de la rampa (frac_rampa de la subida)
+        #    i_estimulo (parámetro) es el frame aproximado; i_est es el inicio de la rampa y es el que se usa de acá en adelante
+        if i_estimulo is None or "Brillo" not in df_v.columns:
+            i_det = detectar_estimulo(df_v, cap_v, n_v)        # también crea la columna 'Brillo'
+            i_estimulo = i_det if i_estimulo is None else i_estimulo
+        if i_estimulo < round(3 * fps_v):
+            raise ValueError("El estímulo ocurre en los primeros 3 s del video: no hay línea base suficiente.")
+        i_est = inicio_rampa(df_v, fps_v, i_estimulo, frac_rampa)
+        t0 = df_v.loc[i_est, "t (s)"]
 
-    T_CONSTRICCION = df.loc[i_constr, "t (s)"]
-    print(f"Línea base: {mu_d:.1f} px (desvío {sd_d:.2f}) | umbral: {umbral_d:.1f} px")
-    print(f"Inicio de la constricción: frame {i_constr} ({T_CONSTRICCION:.3f} s)")
+        # Latencia: primer frame desde el estímulo que abre una racha de n_sostenido frames
+        #    con el diámetro por debajo de (1 - frac_caida) * línea base (mediana de todo el tramo previo)
+        d = df_v["Diámetro (px)"].values
+        base_d = np.nanmedian(d[:i_est])
+        umbral_d = base_d * (1 - frac_caida)                   # solo para graficar; inicio_cambio lo recalcula
+        i_constr = inicio_cambio(d, i_est, base_d, frac_caida, -1, n_sostenido)
 
-    plt.figure(figsize=(12, 3.5))
-    plt.plot(df["t (s)"], df["Diámetro (px)"], linewidth=0.9)
-    plt.axvline(T_CONSTRICCION, color="g", linestyle="--", linewidth=0.9, label="Inicio de la constricción")
-    plt.xlabel("Tiempo (s)"); plt.ylabel("Diámetro (px)")
-    plt.axvline(T_ESTIMULO, color="r", linestyle="--", linewidth=0.9, label="Estímulo")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
+        # Amplitud: área basal (mediana de todo el tramo previo) menos el área mínima de la serie suavizada
+        a_suav = df_v["Área (px²)"].rolling(vent_min, center=True, min_periods=1).median()
+        area_basal = a_suav.iloc[:i_est].median()
+        if i_constr is None:
+            # no hubo constricción sostenida: todos los resultados quedan en NaN
+            lat_ms = lat_fr = t_constr = i_min = area_min = amplitud = amp_pct = np.nan
+        else:
+            t_constr = df_v.loc[i_constr, "t (s)"]
+            lat_ms, lat_fr = (t_constr - t0) * 1000, i_constr - i_est
+            i_min = i_constr + int(np.argmin(a_suav.values[i_constr:]))   # mínimo desde la constricción hasta el final
+            area_min = a_suav.iloc[i_min]
+            amplitud = area_basal - area_min
+            amp_pct = 100 * amplitud / area_basal
 
-    latencia_s = T_CONSTRICCION - T_ESTIMULO
-    latencia_frames = i_constr - i_estimulo
+        return {"i_estimulo": i_est, "t_estimulo": t0, "base_diam": base_d, "umbral_diam": umbral_d,
+                "i_constr": i_constr, "t_constr": t_constr, "latencia_ms": lat_ms, "latencia_frames": lat_fr,
+                "area_basal": area_basal, "area_min": area_min, "i_min": i_min,
+                "t_min": df_v.loc[i_min, "t (s)"] if i_constr is not None else np.nan,
+                "amplitud": amplitud, "amplitud_pct": amp_pct}
 
-    print(f"Estímulo:                  frame {i_estimulo} ({T_ESTIMULO:.3f} s)")
-    print(f"Inicio de la constricción: frame {i_constr} ({T_CONSTRICCION:.3f} s)")
-    print(f"Tiempo de latencia: {latencia_s * 1000:.0f} ms ({latencia_frames} frames)")
+    # %%
+    def graficar_analisis(df_v, r, nombre=""):
+        fig, axs = plt.subplots(2, 1, figsize=(12, 7), sharex=True)
+        axs[0].plot(df_v["t (s)"], df_v["Diámetro (px)"], linewidth=0.9)
+        axs[0].axhline(r["umbral_diam"], color="gray", ls=":", label="Umbral de caída")
+        axs[0].set_ylabel("Diámetro (px)"); axs[0].set_title(nombre)
+        axs[1].plot(df_v["t (s)"], df_v["Área (px²)"], linewidth=0.9)
+        axs[1].axhline(r["area_basal"], color="gray", ls=":", label="Área basal")
+        if not np.isnan(r["area_min"]):
+            axs[1].axhline(r["area_min"], color="gray", ls="--", label="Área mínima")
+        axs[1].set_ylabel("Área (px²)"); axs[1].set_xlabel("Tiempo (s)")
+        for ax in axs:
+            ax.axvline(r["t_estimulo"], color="r", ls="--", linewidth=0.9, label="Estímulo")
+            if not np.isnan(r["t_constr"]):
+                ax.axvline(r["t_constr"], color="g", ls="--", linewidth=0.9, label="Inicio de la constricción")
+            ax.grid(alpha=0.3); ax.legend(loc="upper right", fontsize=8)
+        plt.tight_layout(); plt.show()
 
-    # Teniendo en cuenta que la latencia pupilar a un flash en humanos es de 200 a 300 ms en promedio, corroboramos que los resultados obtenidos son lógicos.
+    def mostrar_analisis(df_v, r, nombre=""):
+        """Mismo resumen y mismas figuras para cualquier registro (r: salida de analizar_registro)."""
+        print(nombre)
+        print(f"Estímulo:                  frame {r['i_estimulo']} ({r['t_estimulo']:.3f} s)")
+        print(f"Inicio de la constricción: frame {r['i_constr']} ({r['t_constr']:.3f} s)")
+        print(f"Tiempo de latencia: {r['latencia_ms']:.0f} ms ({r['latencia_frames']} frames)")
+        print(f"Línea base: {r['base_diam']:.1f} px | umbral de caída: {r['umbral_diam']:.1f} px")
+        print(f"Área basal:  {r['area_basal']:.0f} px²")
+        print(f"Área mínima: {r['area_min']:.0f} px² (frame {r['i_min']}, {r['t_min']:.2f} s)")
+        print(f"Amplitud de respuesta: {r['amplitud']:.0f} px² ({r['amplitud_pct']:.1f} % del área basal)")
 
-    VENT_MIN = 15      # frames de la mediana móvil (descarta picos aislados)
+        fig, axs = plt.subplots(2, 1, figsize=(12, 5), sharex=True)
+        axs[0].plot(df_v["t (s)"], df_v["Brillo"], linewidth=0.9); axs[0].set_ylabel("Brillo medio del frame")
+        axs[1].plot(df_v["t (s)"], df_v["Diámetro (px)"], linewidth=0.9); axs[1].set_ylabel("Diámetro (px)")
+        for ax in axs:
+            ax.axvline(r["t_estimulo"], color="r", linestyle="--", linewidth=0.9); ax.grid(alpha=0.3)
+        axs[0].set_title(f"{nombre}: estímulo detectado"); axs[1].set_xlabel("Tiempo (s)")
+        plt.tight_layout(); plt.show()
+        graficar_analisis(df_v, r, nombre)
 
-    a = df["Área (px²)"]
-    a_suav = a.rolling(VENT_MIN, center=True, min_periods=1).median()
+    # %%
+    an1 = analizar_registro(df, cap, fps)
+    mostrar_analisis(df, an1, "Registro A_2")
 
-    # Área basal: mediana de la serie suavizada en la ventana previa al estímulo (oscuridad)
-    area_basal = a_suav.iloc[max(0, i_estimulo - n_base): i_estimulo].median()
+    # Variables que usa la celda de velocidad de constricción (mismo inicio que la latencia)
+    i_estimulo, T_ESTIMULO = an1["i_estimulo"], an1["t_estimulo"]
+    i_constr, T_CONSTRICCION = an1["i_constr"], an1["t_constr"]
 
-    # Área mínima: mínimo de la serie suavizada desde el inicio de la constricción
-    i_min = int(a_suav.iloc[i_constr:].idxmin())
-    area_min = a_suav.iloc[i_min]
-    t_min = df.loc[i_min, "t (s)"]
-
-    # Amplitud de respuesta
-    amplitud = area_basal - area_min
-    amplitud_pct = 100 * amplitud / area_basal
-
-    print(f"Área basal:  {area_basal:.0f} px²")
-    print(f"Área mínima: {area_min:.0f} px² (frame {i_min}, {t_min:.2f} s)")
-    print(f"Amplitud de respuesta: {amplitud:.0f} px² ({amplitud_pct:.1f} % del área basal)")
-
-    # Gráfico
-    plt.plot(df["t (s)"], a, linewidth=0.9, label="Área")
-    plt.axhline(area_basal, color="gray", ls=":", label=f"Área basal")
-    plt.axhline(area_min, color="gray", ls="--", label=f"Área mínima")
-    plt.axvline(T_ESTIMULO, color="r", ls="--", linewidth=0.9, label="Estímulo")
-    plt.axvline(T_CONSTRICCION, color="g", ls="--", linewidth=0.9, label="Inicio constricción")
-    plt.xlabel("Tiempo (s)"); plt.ylabel("Área (px²)")
-    plt.legend(loc="upper right", fontsize=8); plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
+    # %% [markdown]
     # Cabe aclarar que todos los valores de área y diámetro están expresados en píxeles, no en unidades físicas. Por eso no es del todo seguro guiarse por los valores absolutos: si durante la toma la cámara se acercó o se alejó del ojo, o el ojo cambió de distancia respecto de ella, el tamaño aparente de la pupila en la imagen pudo variar y modificar los resultados, sin que eso corresponda a un cambio real de la pupila.
-    # A continuación, calcularemos la velocidad media de constricción, que se obtiene como el cambio total entre el inicio de la constricción y el mínimo, dividido por el tiempo que tardó.
 
+    # %% [markdown]
+    # A continuación, calcularemos la velocidad media de constricción, que se obtiene como el cambio de diámetro entre el inicio de la constricción y el instante en que se completa el 90% de la caída total, dividido por el tiempo entre ambos instantes.
+
+    # %%
     FRAC_CAIDA = 0.9   # fracción de la caída total que marca el final de la constricción
 
     def constriccion(serie):
         s = serie.rolling(VENT_MIN, center=True, min_periods=1).median()
-        base = s.iloc[max(0, i_estimulo - n_base): i_estimulo].median()
-        minimo = s.iloc[i_constr:].min()
-        nivel = base - FRAC_CAIDA * (base - minimo)
+        base = s.iloc[:i_estimulo].median()             # nivel previo al estímulo
+        minimo = s.iloc[i_constr:].min()                # mínimo después del inicio de la constricción
+        nivel = base - FRAC_CAIDA * (base - minimo)     # diámetro que marca el 90% de la caída
         i_fin = i_constr + int(np.argmax(s.iloc[i_constr:].values <= nivel))   # primer frame que llega al 90 % de la caída
         return s, base, minimo, i_fin
 
     def velocidad_media_constriccion(serie, unidad):
         s, base, minimo, i_fin = constriccion(serie)
         dur = df.loc[i_fin, "t (s)"] - T_CONSTRICCION
-        vel = (base - s.iloc[i_fin]) / dur
+        vel = (s.iloc[i_constr] - s.iloc[i_fin]) / dur
         return pd.DataFrame({
             f"Basal ({unidad})": [base],
             f"Mínimo ({unidad})": [minimo],
             "Duración (s)": [dur],
             f"Velocidad media ({unidad}/s)": [vel],
+            "Velocidad relativa (% del basal/s)": [100 * vel / base],
         }, index=[""])
 
     display(velocidad_media_constriccion(df["Diámetro (px)"], "px").round(2))
 
-    # Se obtiene una velocidad de constricción de 11,81 px/s.
+    # %% [markdown]
+    # Se obtiene una velocidad de constricción de 7,01 px/s.
+
+    # %% [markdown]
     # Para calcular la velocidad de redilatación se utiliza otro video. Repetimos todo el procesamiento aplicado al primer video para poder obtener los datos.
 
-    VIDEO_PATH_2 = "../data/raw/Registro B_1.MOV"
+    # %%
+    VIDEO_PATH_2 = BASE_DIR / "data" / "raw" / "Registro B_1.MOV"
 
     cap2 = cv2.VideoCapture(VIDEO_PATH_2)
     if not cap2.isOpened():
@@ -2373,13 +2491,10 @@ def modulo_3():
     ok, frame0 = cap2.read()
     plt.figure(figsize=(10, 5))
     plt.imshow(cv2.cvtColor(frame0, cv2.COLOR_BGR2RGB))
-    plt.plot(*CENTRO_INICIAL_2, "r", ms=15)
     plt.gca().add_patch(plt.Circle(CENTRO_INICIAL_2, RADIO_INICIAL_2, fill=False, color="r"))
     plt.axis("off"); plt.show()
 
     # %%
-    UMBRAL_CIRC = 0.89
-
     def procesar_video(cap_v, n_v, fps_v, centro_inicial, radio_inicial):
         centros_v, centro = [], centro_inicial
         cap_v.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -2391,7 +2506,7 @@ def modulo_3():
             centros_v.append(centro)
         centros_v = np.array(centros_v, dtype=float)
 
-        # 2) Medición frame a frame
+        # Medición frame a frame
         filas = []
         cap_v.set(cv2.CAP_PROP_POS_FRAMES, 0)
         for i in range(n_v):
@@ -2449,10 +2564,7 @@ def modulo_3():
     plt.tight_layout(); plt.show()
 
     # %%
-    N_SOSTENIDO = 5
     VENTANA_BASE_S = 2.0
-    K_SIGMA = 3
-    VENT_MIN = 15
     FRAC_SUBIDA = 0.9      # fracción de la subida total que marca el final de la redilatación
     T_REF = (9, 12)
 
@@ -2461,21 +2573,14 @@ def modulo_3():
     m_ref = (t2 >= T_REF[0]) & (t2 <= T_REF[1])
     i_ref_fin = int(np.where(m_ref)[0][-1])
 
-    # Mínimo de la serie suavizada (descarta picos aislados) y su ruido
-    s_dia2 = df2["Diámetro (px)"].rolling(VENT_MIN, center=True, min_periods=1).median().values
-    mu_c, sd_c = np.median(s_dia2[m_ref]), np.std(s_dia2[m_ref])
-    umbral_up = mu_c + K_SIGMA * sd_c
-
-    encima = s_dia2 > umbral_up
-    i_red = None
-    for i in range(i_ref_fin, n_frames2 - N_SOSTENIDO + 1):
-        if encima[i:i + N_SOSTENIDO].all():
-            i_red = i              # primer frame de la racha, no el último
-            break
+    # Mismo criterio de inicio que la constricción: 10 % por encima del nivel previo durante 5 frames consecutivos
+    d2 = df2["Diámetro (px)"].values
+    mu_c = np.nanmedian(d2[m_ref])
+    i_red = inicio_cambio(d2, i_ref_fin, mu_c, FRAC_INICIO, +1, N_SOSTENIDO)
     if i_red is None:
         raise RuntimeError("No se detectó redilatación sostenida después de la ventana de referencia.")
     T_REDILATACION = df2.loc[i_red, "t (s)"]
-    print(f"Nivel previo: {mu_c:.1f} px (desvío {sd_c:.2f}) | umbral: {umbral_up:.1f} px")
+    print(f"Nivel previo: {mu_c:.1f} px")
     print(f"Inicio de la redilatación: frame {i_red} ({T_REDILATACION:.3f} s)")
 
     # Velocidad media
@@ -2492,20 +2597,101 @@ def modulo_3():
     def velocidad_media_redilatacion(serie, unidad):
         s, previo, final, i_fin = redilatacion(serie)
         dur = df2.loc[i_fin, "t (s)"] - T_REDILATACION
-        vel = (s.iloc[i_fin] - previo) / dur
+        vel = (s.iloc[i_fin] - s.iloc[i_red]) / dur
         return pd.DataFrame({
             f"Nivel previo ({unidad})": [previo],
             f"Nivel final ({unidad})": [final],
             "Duración (s)": [dur],
             f"Velocidad media ({unidad}/s)": [vel],
+            "Velocidad relativa (% del nivel final/s)": [100 * vel / final],
         }, index=[""])
 
     print("DIÁMETRO")
     display(velocidad_media_redilatacion(df2["Diámetro (px)"], "px").round(2))
 
     # %% [markdown]
-    # Se obtiene una velocidad de redilatación de 12,05 px/s. Los dos valores de velocidades son practicamente iguales, solo hay un ~2% de diferencia entre ellos, lo que está dentro de la incertidumbre de la medición.
-    # Cabe aclarar que la constricción suele ser más rápida que la redilatación. Acá no se observa esa diferencia, y puede deberse a posibles cambios de escala de la cámara entre tomas, y que se está haciendo el cálculo a partir de una sola medición, sin poder evaluar errores a partir del análisis de otros videos.
+    # Se obtiene una velocidad media de redilatación de 9,41 px/s, frente a 7,01 px/s para la constricción. La redilatación resulta entonces más rápida, con una diferencia de 2,40 px/s (~34 % respecto de la constricción), lo cual es contrario a lo esperado, ya que la constricción suele ser más rápida que la redilatación.
+    # 
+    # 
+    # Como ambas velocidades provienen de registros distintos, también se las expresó como porcentaje del diámetro de reposo de cada registro (nivel basal en la constricción, nivel final en la redilatación): 12,3 %/s y 15,9 %/s respectivamente. La diferencia persiste, por lo que un cambio de escala de la cámara entre tomas no alcanza para explicarla. Además, los diámetros de reposo de ambos registros son similares (57,2 px y 59,1 px), lo que sugiere escalas comparables.
+    # 
+    # 
+    # Sin embargo, cada velocidad proviene de una única medición, de registros distintos, y depende de los criterios elegidos. Por lo tanto, no se puede afirmar que la diferencia sea real. Para corroborlo se deberían haber realizado más registros y repetir la medición, y así estimar la incertidumbre.
+
+    # %% [markdown]
+    # A continuación, usamos otro registro de constricción de la pupila para comparar resultados de latencia y amplitud.
+
+    # %%
+    VIDEO_PATH_3 = BASE_DIR / "data" / "raw" / "Registro A_1.MOV"
+
+    cap3 = cv2.VideoCapture(VIDEO_PATH_3)
+    if not cap3.isOpened():
+        raise RuntimeError(f"No se pudo abrir el video: {VIDEO_PATH_3}")
+    fps3 = cap3.get(cv2.CAP_PROP_FPS)
+    n_frames3 = int(cap3.get(cv2.CAP_PROP_FRAME_COUNT))
+    print(f"FPS: {fps3:.2f} | Frames: {n_frames3} | Duración: {n_frames3 / fps3:.2f} s")
+
+    CENTRO_INICIAL_3 = (890, 510) 
+    RADIO_INICIAL_3 = 60              # ventana de búsqueda del primer frame
+
+    cap3.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    ok, frame0 = cap3.read()
+    plt.figure(figsize=(10, 5))
+    plt.imshow(cv2.cvtColor(frame0, cv2.COLOR_BGR2RGB))
+    plt.plot(*CENTRO_INICIAL_3, "r+", ms=15)
+    plt.gca().add_patch(plt.Circle(CENTRO_INICIAL_3, RADIO_INICIAL_3, fill=False, color="r"))
+    plt.axis("off"); plt.show()
+
+    # %%
+    df3, centros3 = procesar_video(cap3, n_frames3, fps3, CENTRO_INICIAL_3, RADIO_INICIAL_3)
+
+    inv = ~df3["Válido"]
+    rachas = inv.ne(inv.shift()).cumsum()[inv].value_counts()
+    racha_max = rachas.max() if len(rachas) else 0
+    print(f"Frames interpolados: {inv.sum()} de {len(df3)} ({100 * inv.mean():.1f} %) | "
+          f"racha más larga: {racha_max} frames ({racha_max / fps3:.2f} s)")
+
+    # %%
+    indices = np.linspace(0, n_frames3 - 1, 12).astype(int)
+
+    fig, axs = plt.subplots(3, 4, figsize=(18, 8))
+    for ax, idx in zip(axs.ravel(), indices):
+        cap3.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+        ok, frame = cap3.read()
+        roi, (cx, cy) = recortar_roi(frame, (int(centros3[idx, 0]), int(centros3[idx, 1])))
+        vis = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+        contorno = medir_pupila(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY), cx=cx, cy=cy)
+        if contorno is None:
+            titulo = f"frame {idx}: sin segmentación"
+        else:
+            cv2.drawContours(vis, [contorno], -1, (0, 255, 0), 1)
+            titulo = f"frame {idx} ({idx / fps3:.1f} s)\nC = {circularidad(contorno):.2f}"
+        ax.imshow(vis); ax.set_title(titulo, fontsize=10); ax.axis("off")
+    plt.tight_layout(); plt.show()
+
+    # %%
+    fig, axs = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
+    for ax, col in [(axs[0], "Diámetro (px)"), (axs[1], "Área (px²)")]:
+        ax.plot(df3["t (s)"], df3[col], linewidth=0.9, label="Automático")
+        interp = df3[df3["Interpolado"]]
+        ax.scatter(interp["t (s)"], interp[col], color="r", s=10, zorder=3, label="Interpolado")
+        ax.set_ylabel(col); ax.grid(alpha=0.3)
+    axs[0].legend(loc="upper right"); axs[1].set_xlabel("Tiempo (s)")
+    axs[0].set_title("Evolución temporal de la pupila")
+    plt.tight_layout(); plt.show()
+
+    # %%
+    an3 = analizar_registro(df3, cap3, fps3)
+    mostrar_analisis(df3, an3, "Registro A_1")
+
+    claves = ["t_estimulo", "latencia_ms", "latencia_frames", "area_basal", "area_min", "amplitud", "amplitud_pct"]
+    comparacion = pd.DataFrame({"Registro A_2": an1, "Registro A_1": an3}).loc[claves]
+    comparacion.index = ["Estímulo (s)", "Latencia (ms)", "Latencia (frames)", "Área basal (px²)",
+                         "Área mínima (px²)", "Amplitud (px²)", "Amplitud (% del área basal)"]
+    display(comparacion.astype(float).round(2))
+
+    # %% [markdown]
+    # La latencia es de 400 ms en ambos registros con el criterio del 10 % mayor al rango típico de 200–300 ms. La latencia depende del umbral, ya que el inicio de la constricción es gradual. Las posibles causas del valor alto son: el criterio por umbral detecta la constricción algo después de su inicio real y la resolución del video (~33 ms por frame)
 
     # %% [markdown]
     # En cuanto a presencia de artefactos, se implementaron los siguientes métodos a lo largo del análisis para poder filtrarlos e interpolarlos:
