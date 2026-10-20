@@ -12,7 +12,6 @@ matplotlib.use("Agg")                      # sin ventanas: corre en cualquier m√
 from pupila.config import cargar_config
 from pupila.pipeline import ejecutar_pipeline
 
-
 def main():
     ap = argparse.ArgumentParser(description="Pipeline de reflejo fotomotor pupilar")
     ap.add_argument("--config", default="config.yaml")

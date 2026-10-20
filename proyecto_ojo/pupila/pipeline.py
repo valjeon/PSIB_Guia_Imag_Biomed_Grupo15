@@ -70,11 +70,11 @@ def generar_reporte(ctx, cfg, df, out_dir):
                 img, _ = modulo1.filtro_frecuencia(gris, d0, tipo, forma)
                 filas.append({"ruido": "ninguno", "filtro": f"frecuencia {forma} {tipo} D0={d0}",
                               **modulo1.metricas_calidad(gris, img)})
-        for nombre, b in modulo1.detectar_bordes(gris).items():
-            filas.append({"ruido": "ninguno", "filtro": f"continuidad borde {nombre}",
-                          "PSNR (dB)": np.nan,
-                          "SSIM": modulo1.continuidad_contorno_pupilar(b, mask_ws)})
-        pd.DataFrame(filas).to_csv(out_dir / "modulo1_metricas.csv", index=False)
+        # for nombre, b in modulo1.detectar_bordes(gris).items():
+        #     filas.append({"ruido": "ninguno", "filtro": f"continuidad borde {nombre}",
+        #                   "PSNR (dB)": np.nan,
+        #                   "SSIM": modulo1.continuidad_contorno_pupilar(b, mask_ws)})
+        # pd.DataFrame(filas).to_csv(out_dir / "modulo1_metricas.csv", index=False)
     paso("Módulo 1", m1)
 
     # ---- Módulo 2
@@ -86,9 +86,9 @@ def generar_reporte(ctx, cfg, df, out_dir):
             mascaras["Snake"] = modulo2.segmentar_snake(gris, (cx, cy))[2]
         except Exception as e:             # noqa: BLE001
             avisos.append(f"Snake: {e}")
-        modulo2.tabla_metricas(mascaras, mask_ws).to_csv(out_dir / "modulo2_segmentacion_vs_watershed.csv")
-        modulo2.tabla_metricas(modulo2.combinaciones_morfologicas(mask_ws), mask_ws).to_csv(
-            out_dir / "modulo2_morfologia_vs_watershed.csv")
+        # modulo2.tabla_metricas(mascaras, mask_ws).to_csv(out_dir / "modulo2_segmentacion_vs_watershed.csv")
+        # modulo2.tabla_metricas(modulo2.combinaciones_morfologicas(mask_ws), mask_ws).to_csv(
+        #     out_dir / "modulo2_morfologia_vs_watershed.csv")
     paso("Módulo 2", m2)
 
     # ---- Módulo 3 (frame de referencia)
@@ -97,19 +97,19 @@ def generar_reporte(ctx, cfg, df, out_dir):
         desc, _ = modulo3.descriptores_morfometricos(cont)
         mask_iris, _ = modulo3.segmentar_iris(gris, mask_ws, (desc["Centroide X_c (px)"], desc["Centroide Y_c (px)"]))
         mask_iris_ok, _ = modulo3.mascara_sin_reflejos(gris, mask_iris)
-        pd.DataFrame(desc, index=["valor"]).T.to_csv(out_dir / "modulo3_morfometria.csv")
-        sp = modulo3.estadisticas_primer_orden(roi_cuant, mask_ws)
-        si = modulo3.estadisticas_primer_orden(roi_cuant, mask_iris_ok)
-        gp, gi, _ = modulo3.textura_glcm_por_canal(roi_cuant, mask_ws, mask_iris_ok)
-        pd.concat({"pupila_primer_orden": sp, "iris_primer_orden": si,
-                   "pupila_glcm": gp, "iris_glcm": gi}, axis=0).to_csv(out_dir / "modulo3_textura.csv")
+        # pd.DataFrame(desc, index=["valor"]).T.to_csv(out_dir / "modulo3_morfometria.csv")
+        # sp = modulo3.estadisticas_primer_orden(roi_cuant, mask_ws)
+        # si = modulo3.estadisticas_primer_orden(roi_cuant, mask_iris_ok)
+        # gp, gi, _ = modulo3.textura_glcm_por_canal(roi_cuant, mask_ws, mask_iris_ok)
+        # pd.concat({"pupila_primer_orden": sp, "iris_primer_orden": si,
+        #            "pupila_glcm": gp, "iris_glcm": gi}, axis=0).to_csv(out_dir / "modulo3_textura.csv")
     paso("Módulo 3", m3)
 
     # ---- Módulo 4
     def m4():
         tabla, _ = modulo4.comparar_compresion(gris)
-        tabla.to_csv(out_dir / "modulo4_compresion.csv", index=False)
-        modulo4.efecto_jpeg_en_diametro(gris, cx, cy)[0].to_csv(out_dir / "modulo4_efecto_jpeg_diametro.csv")
+        # tabla.to_csv(out_dir / "modulo4_compresion.csv", index=False)
+        # modulo4.efecto_jpeg_en_diametro(gris, cx, cy)[0].to_csv(out_dir / "modulo4_efecto_jpeg_diametro.csv")
     paso("Módulo 4", m4)
     return avisos
 
