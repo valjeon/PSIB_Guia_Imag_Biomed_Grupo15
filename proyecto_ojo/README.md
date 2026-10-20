@@ -1,7 +1,5 @@
 # PSIB — Reflejo fotomotor pupilar
 
-Pipeline reproducible (Módulos 0 a 4) para medir la respuesta pupilar a un flash a partir de un video del ojo.
-
 ## Estructura
 
 ```
@@ -16,7 +14,7 @@ pupila/
   modulo3.py           morfometría, textura, procesamiento del video, parámetros fisiológicos
   modulo4.py           Huffman, RLE, JPEG, comparación
   pipeline.py          orquesta todo y escribe los CSV
-data/raw/              videos de entrada
+data/                  videos de entrada
 resultados/            salidas (se crea sola)
 ```
 
