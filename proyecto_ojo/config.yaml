@@ -1,0 +1,45 @@
+# ============================================================
+#  Configuración del pipeline  (único archivo a tocar para
+#  procesar un video nuevo: cambiar video_path)
+# ============================================================
+video_path: data/raw/Registro A_2 copia.mov     # relativo a la carpeta de este archivo
+output_dir: resultados                    # acá se escriben los CSV y figuras
+
+# --- Frame de referencia (Módulos 1, 2 y descriptores del 3) ---
+frame_referencia: null                    # null = frame central
+
+# --- Centro inicial de la pupila (coordenadas del frame completo [x, y]) ---
+# null = detección automática (zona oscura más marcada). Se guarda una
+# vista previa en output_dir/vista_previa_roi.png para verificarla.
+centro_pupila_inicial: null
+
+# --- Detección automática de la pupila (se usa si centro_pupila_inicial es null) ---
+deteccion:
+  ojo: auto                               # auto | izquierdo | derecho  (si se ven los dos ojos; según la imagen)
+  frames_muestra: 9                       # frames del video usados para votar
+
+# --- ROI recortada alrededor de la pupila ---
+roi:
+  ancho: 320
+  alto: 130
+  centro_pupila_en_roi: [160, 50]         # dónde queda la pupila dentro de la ROI [x, y]
+
+# --- Seguimiento y segmentación frame a frame ---
+video:
+  radio_busqueda_inicial: 150             # px, primer frame
+  radio_busqueda: 80                      # px, frames siguientes
+  umbral_circularidad: 0.89               # frames con circularidad menor => inválidos (se interpolan)
+
+# --- Parámetros fisiológicos ---
+fisiologia:
+  t_estimulo_s: null                      # null = detección automática por salto de brillo
+  ventana_base_s: 2.0                     # segundos previos al estímulo para la línea base
+  k_sigma: 3
+  n_sostenido: 5
+  ventana_mediana: 15
+  fraccion_constriccion: 0.9
+  fraccion_redilatacion: 0.9
+
+# --- Salidas ---
+generar_reporte: true                     # tablas de los Módulos 1, 2, 3 y 4 en CSV
+anotaciones_manuales: null                # CSV opcional (frame, area_manual_px2, diametro_manual_px)
