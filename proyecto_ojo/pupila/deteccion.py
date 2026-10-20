@@ -130,7 +130,7 @@ def detectar_en_video(video_path, n_frames_muestra=9, score_minimo=0.25, ojo="au
     sirve cuando se ven los dos ojos). Devuelve un dict con centro (x, y), radio, confianza
     (fracción de frames que coinciden) y las detecciones; None si no se detecta nada creíble.
     """
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(str(video_path), cv2.CAP_FFMPEG)
     n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     indices = np.unique(np.linspace(0, max(n - 1, 0), n_frames_muestra).astype(int))
     dets = []

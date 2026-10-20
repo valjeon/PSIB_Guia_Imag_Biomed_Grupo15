@@ -192,7 +192,7 @@ def procesar_video(video_path, centro_inicial, cfg, progreso=True):
     Los frames inválidos (circularidad < umbral o sin segmentación) se interpolan.
     """
     r, v = cfg["roi"], cfg["video"]
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(str(video_path), cv2.CAP_FFMPEG)
     if not cap.isOpened():
         raise RuntimeError(f"No se pudo abrir el video: {video_path}")
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -268,7 +268,7 @@ def anotar_frames_manualmente(video_path, indices, centros, cfg, ruta_csv, escal
     `centros` es el array (n_frames, 2) de centros pupilares (df[['centro_x_px','centro_y_px']]).
     """
     r = cfg["roi"]
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(str(video_path), cv2.CAP_FFMPEG)
     manual = (pd.read_csv(ruta_csv).rename(columns={"Área manual (px²)": "area_manual_px2",
                                                     "Diámetro manual (px)": "diametro_manual_px"})
               if os.path.exists(ruta_csv)

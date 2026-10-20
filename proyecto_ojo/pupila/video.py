@@ -8,7 +8,7 @@ KERNEL_REFLEJO = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
 
 # ----------------------------------------------------------------- video
 def info_video(video_path):
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(str(video_path), cv2.CAP_FFMPEG)
     if not cap.isOpened():
         raise RuntimeError(f"No se pudo abrir el video: {video_path}")
     info = {
@@ -26,7 +26,7 @@ def info_video(video_path):
 
 def leer_frame(video_path, indice):
     """Devuelve el frame `indice` en BGR."""
-    cap = cv2.VideoCapture(str(video_path))
+    cap = cv2.VideoCapture(str(video_path), cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_POS_FRAMES, int(indice))
     ok, frame = cap.read()
     cap.release()

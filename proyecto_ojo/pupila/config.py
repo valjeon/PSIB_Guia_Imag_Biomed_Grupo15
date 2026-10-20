@@ -4,7 +4,7 @@ import copy
 import yaml
 
 DEFAULTS = {
-    "video_path": "data/raw/Registro A_2 copia.mov",
+    "video_path": None,
     "output_dir": "resultados",
     "frame_referencia": None,
     "centro_pupila_inicial": None,
@@ -15,8 +15,7 @@ DEFAULTS = {
     "fisiologia": {"t_estimulo_s": None, "ventana_base_s": 2.0, "k_sigma": 3,
                    "n_sostenido": 5, "ventana_mediana": 15,
                    "fraccion_constriccion": 0.9, "fraccion_redilatacion": 0.9},
-    "generar_reporte": True,
-    "anotaciones_manuales": None,
+    "generar_reporte": True
 }
 
 

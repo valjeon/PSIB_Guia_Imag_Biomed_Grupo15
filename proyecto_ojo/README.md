@@ -33,11 +33,9 @@ No requiere intervención: el centro de la pupila se detecta automáticamente
 (si fallara, fijar `centro_pupila_inicial: [x, y]` en `config.yaml`; `resultados/vista_previa_roi.png`
 muestra qué se detectó).
 
-## Salidas (en `output_dir`)
+## Salidas (en `resultados`)
 
-- `curva_pupila.csv`: `frame, tiempo_s, area_px2, diametro_px, interpolado, circularidad, centro_x_px, centro_y_px, brillo_medio`
-- `parametros_fisiologicos.csv`: `parametro, valor, unidad` — tiempo de estímulo, latencia (ms), amplitud (área y diámetro),
-  velocidad de constricción y de redilatación, etc. Los parámetros que no se pueden calcular quedan en NaN (las filas son siempre las mismas).
-- `curva_pupila.png`, `vista_previa_roi.png` y tablas `modulo1_*.csv … modulo4_*.csv` (si `generar_reporte: true`).
+- `resultados.csv`: Las columnas son frame, tiempo_s, area_px2, diametro_px, interpolado, circularidad, centro_x_px, centro_y_px, brillo_medio, seguidas de los parámetros fisiológicos (t_estimulo_s, frame_estimulo, t_inicio_constriccion_s, latencia_ms, diametro_basal_px, diametro_minimo_px, amplitud_diametro_px, area_basal_px2, area_minima_px2, amplitud_area_px2, amplitud_area_pct, t_minimo_s, velocidad_constriccion_*, duracion_constriccion_s, t_inicio_redilatacion_s, velocidad_redilatacion_*) y de fps, n_frames, duracion_s, frames_interpolados_pct. Los parámetros son constantes del registro y se repiten en cada fila. Si alguno no se puede calcular queda en NaN.
+- `curva_pupila.png`
 
 Todas las magnitudes están en píxeles (sin calibración a mm).

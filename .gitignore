@@ -11,6 +11,8 @@ env/
 # Resultados generados
 data/processed/
 outputs/
+resultados
+resultados_ojo
 
 # Archivos del sistema
 .DS_Store
