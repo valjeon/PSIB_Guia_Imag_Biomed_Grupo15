@@ -24,12 +24,13 @@ resultados/            salidas (se crea sola)
 
 ```bash
 pip install -r requirements.txt
-# 1) editar video_path en config.yaml  (o usar --video)
+  # Editar video_path en config.yaml  (o usar --video)
 python run_pipeline.py
-python run_pipeline.py --video "data/raw/otro_registro.mov" --out resultados_otro
+python run_pipeline.py --video "data/nombre del video.mov"
+#guardar video a utilizar en la carpeta data
 ```
 
-No requiere intervención: el centro de la pupila se detecta automáticamente
+El centro de la pupila se detecta automáticamente
 (si fallara, fijar `centro_pupila_inicial: [x, y]` en `config.yaml`; `resultados/vista_previa_roi.png`
 muestra qué se detectó).
 
