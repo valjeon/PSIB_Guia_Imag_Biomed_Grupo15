@@ -29,9 +29,20 @@ def segmentar_kmeans(roi_rgb, ks=range(2, 6)):
         resultados[k] = ((etiquetas == oscuro).astype(np.uint8) * 255).reshape(hsv.shape[:2])
     return resultados
 
+# --------------------------------------------------------------- buscar pupila
+def estimar_radio_pupila(gris, centro, r_max=50, r_min=5, sigma=2):
+    """Radio de la pupila a partir del perfil radial de intensidad (mediana sobre los 360°).
+    El borde pupilar es donde el perfil sube más rápido (pupila oscura -> iris más claro)."""
+    suave = cv2.GaussianBlur(gris, (0, 0), sigma)
+    polar = cv2.warpPolar(suave, (r_max, 360), (float(centro[0]), float(centro[1])),
+                          r_max, cv2.WARP_POLAR_LINEAR)           # filas = ángulo, columnas = radio
+    perfil = np.median(polar, axis=0).astype(np.float64)
+    perfil = cv2.GaussianBlur(perfil.reshape(1, -1), (0, 0), 1.5).ravel()
+    return r_min + int(np.argmax(np.gradient(perfil)[r_min:]))
+
 # --------------------------------------------------------------- Snakes
 def segmentar_snake(gris, centro, radio=40, n_puntos=150, sigma=2,
-                    alpha=0.05, beta=0.01, gamma=0.05, w_line=0.1, w_edge=1,
+                    alpha=0.05, beta=0.01, gamma=0.5, w_line=0.1, w_edge=1,
                     max_num_iter=1500, convergence=0.001):
     """Contorno activo desde una circunferencia inicial. Devuelve (init, snake, máscara 0/1)."""
     img = gaussian(gris.astype(np.float64) / 255.0, sigma=sigma)
