@@ -1,7 +1,5 @@
 """Orquestación: ejecuta el pipeline completo sobre un video y escribe las salidas estandarizadas."""
 from pathlib import Path
-import traceback
-import cv2
 import numpy as np
 import pandas as pd
 
@@ -9,7 +7,7 @@ from .video import preparar_referencia, guardar_vista_previa
 from . import modulo1, modulo2, modulo3, modulo4
 
 COLUMNAS_CURVA = ["frame", "tiempo_s", "area_px2", "diametro_px", "interpolado",
-                  "circularidad", "centro_x_px", "centro_y_px", "brillo_medio"]
+                  "circularidad", "centro_x_px", "centro_y_px"]
 
 ARCHIVO_SALIDA = "resultados.csv"
 # -------------------------------------------------------------- gráficos
@@ -37,14 +35,8 @@ def graficar_curva(df, P, ev, ruta=None):
 
 # --------------------------------------------------------------- pipeline
 def ejecutar_pipeline(cfg, progreso=True, guardar=True, df_previo=None):
-    """Pipeline de punta a punta para el video indicado en `cfg['video_path']`.
-
-    Salidas (en cfg['output_dir']):
-      - curva_pupila.csv            área/diámetro frame a frame
-      - parametros_fisiologicos.csv latencia, amplitud, velocidades (parametro, valor, unidad)
-      - curva_pupila.png, vista_previa_roi.png y, si generar_reporte, las tablas de los Módulos 1-4.
-    `df_previo` permite reutilizar el resultado de `procesar_video` (evita reprocesar el video).
-    Devuelve un diccionario con df, parametros, tabla_parametros, eventos, ctx y rutas.
+    """Pipeline para el video indicado en `cfg['video_path']`.
+    Devuelve un diccionario con df, parametros, eventos, ctx y rutas.
     """
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -94,16 +86,10 @@ def ejecutar_pipeline(cfg, progreso=True, guardar=True, df_previo=None):
     if cfg.get("anotaciones_manuales") and Path(cfg["anotaciones_manuales"]).exists():
         validacion, _ = modulo3.validar_contra_manual(df, cfg["anotaciones_manuales"])
         if guardar:
-            validacion.to_csv(out_dir / "validacion_vs_manual.csv")
-
-    avisos = []
-    if cfg.get("generar_reporte", True) and guardar:
-        if progreso:
-            print("Generando tablas de los Módulos 1-4...")
-        avisos = generar_reporte(ctx, cfg, df, out_dir)
+            validacion.to_csv(out_dir / "validacion_vs_manual.csv")    
 
     if progreso:
         print(tabla_par.to_string(index=False))
         print(f"\nListo. Resultados en: {out_dir}")
     return {"df": df, "parametros": P, "tabla_parametros": tabla_par, "eventos": ev,
-            "ctx": ctx, "rutas": rutas, "validacion": validacion, "avisos": avisos}
+            "ctx": ctx, "rutas": rutas, "validacion": validacion}
