@@ -94,10 +94,13 @@ def preparar_referencia(cfg):
     automatico = centro is None
     deteccion = None
     if automatico:
-        from .deteccion import detectar_en_video
+        from .deteccion import detectar_en_video, refinar_centro_pupila
         d = cfg.get("deteccion", {})
         deteccion = detectar_en_video(cfg["video_path"], d.get("frames_muestra", 9), ojo=d.get("ojo", "auto"))
         centro = deteccion["centro"] if deteccion else tuple(detectar_centro_inicial(frame_bgr))
+        rd = deteccion["radio"] if deteccion else 20
+        cx_f, cy_f = refinar_centro_pupila(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY), centro, rd)
+        centro = (int(round(cx_f)), int(round(cy_f)))
     else:
         centro = tuple(int(v) for v in centro)
 

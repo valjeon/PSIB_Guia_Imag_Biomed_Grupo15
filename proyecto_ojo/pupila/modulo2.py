@@ -41,11 +41,18 @@ def estimar_radio_pupila(gris, centro, r_max=50, r_min=5, sigma=2):
     return r_min + int(np.argmax(np.gradient(perfil)[r_min:]))
 
 # --------------------------------------------------------------- Snakes
-def segmentar_snake(gris, centro, radio=40, n_puntos=150, sigma=2,
+def segmentar_snake(gris, centro, radio=None, factor_radio=1.3, n_puntos=150, sigma=2,
                     alpha=0.05, beta=0.01, gamma=0.5, w_line=0.1, w_edge=1,
                     max_num_iter=1500, convergence=0.001):
     """Contorno activo desde una circunferencia inicial. Devuelve (init, snake, máscara 0/1)."""
-    img = gaussian(gris.astype(np.float64) / 255.0, sigma=sigma)
+    if radio is None:
+        r_pupila = estimar_radio_pupila(gris, centro)
+        radio = factor_radio * r_pupila
+    else:
+        r_pupila = radio / factor_radio
+    k = max(3, int(round(0.4 * r_pupila)) | 1)
+    gris_snake = cv2.morphologyEx(gris, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+    img = gaussian(gris_snake.astype(np.float64) / 255.0, sigma=sigma)
     theta = np.linspace(0, 2 * np.pi, n_puntos)
     x = centro[0] + radio * np.cos(theta)
     y = centro[1] + radio * np.sin(theta)
@@ -81,11 +88,13 @@ def marcadores_pupila(shape, cx, cy, radio=20, semiejes=(60, 55)):
     return marc
 
 
-def segmentar_pupila(gris, cx, cy, radio=20, semiejes=(60, 55), cerrar=True):
+def segmentar_pupila(gris, cx, cy, radio=None, semiejes=(60, 55), cerrar=True):
     """Watershed con marcadores. Devuelve (máscara 0/255, contorno externo o None).
 
     cerrar=True agrega un cierre morfológico elíptico de 5x5 (como en el Módulo 3).
     """
+    if radio is None:
+        radio = max(3, int(round(0.7 * estimar_radio_pupila(gris, (cx, cy)))))
     suave = preparar_para_watershed(gris)
     marc = marcadores_pupila(gris.shape, cx, cy, radio, semiejes)
     ws = cv2.watershed(cv2.cvtColor(suave, cv2.COLOR_GRAY2BGR), marc.copy())

@@ -467,6 +467,9 @@ def calcular_parametros(df, fps, cfg):
               "amplitud_area_pct": 100 * (area_basal - a_s.iloc[i_min]) / area_basal,
               "diametro_basal_px": diam_basal, "diametro_minimo_px": d_s.iloc[desde:].min(),
               "amplitud_diametro_px": diam_basal - d_s.iloc[desde:].min(), "t_minimo_s": t[i_min]})
+    if i_c is None:
+        for k in ("amplitud_diametro_px", "amplitud_area_px2", "amplitud_area_pct"):
+            P[k] = nan
 
     # --- velocidades ---
     vc_d = velocidad_constriccion(d, t, i_est, i_c, fps, f["ventana_base_s"], f["ventana_mediana"], f["fraccion_constriccion"])

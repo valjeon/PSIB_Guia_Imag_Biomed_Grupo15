@@ -2,7 +2,7 @@
 #  Configuración del pipeline  (único archivo a tocar para
 #  procesar un video nuevo: cambiar video_path)
 # ============================================================
-video_path: data/Registro B_1.mov    # relativo a la carpeta de este archivo
+video_path: data/Registro A_2.mov    # relativo a la carpeta de este archivo
 output_dir: resultados                    # acá se escriben los CSV y figuras
 
 # --- Frame de referencia (Módulos 1, 2 y descriptores del 3) ---

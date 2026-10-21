@@ -176,3 +176,26 @@ def detectar_en_video(video_path, n_frames_muestra=9, score_minimo=0.25, ojo="au
             "frames_muestreados": len(indices), "detecciones": dets,
             "grupos": [(int(np.median([e["centro"][0] for e in g])), int(np.median([e["centro"][1] for e in g])),
                         len({e["frame"] for e in g})) for g in grupos]}
+
+def refinar_centro_pupila(gris, centro, radio, factores=(0.6, 0.75, 0.9, 1.0, 1.15, 1.3, 1.5, 1.8),
+                          ancho_anillo=0.3, radio_busqueda=1.5):
+    """Centro (y radio) del disco oscuro con más contraste contra su anillo exterior, probando varios
+    radios alrededor de 'radio'. Sin umbrales: sirve con pupilas no uniformes y radios aproximados."""
+    k = max(3, int(round(radio * 0.6)) | 1)
+    a = cv2.morphologyEx(gris, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))   # quita reflejos
+    a = cv2.GaussianBlur(a, (0, 0), max(1.0, 0.1 * radio)).astype(np.float32)
+    yv, xv = np.mgrid[0:a.shape[0], 0:a.shape[1]]
+    lejos = np.hypot(xv - centro[0], yv - centro[1]) > radio_busqueda * radio
+    mejor, pos = -np.inf, (float(centro[0]), float(centro[1]))
+    for f in factores:
+        r = f * radio
+        h = int(round((1 + ancho_anillo) * r)) + 1
+        yy, xx = np.mgrid[-h:h + 1, -h:h + 1]; d = np.hypot(xx, yy)
+        disco, anillo = d <= r, (d > r + 1) & (d <= (1 + ancho_anillo) * r)
+        nucleo = (anillo / anillo.sum() - disco / disco.sum()).astype(np.float32)
+        resp = cv2.filter2D(a, -1, nucleo, borderType=cv2.BORDER_REPLICATE)     # media del anillo - media del disco
+        resp[lejos] = -np.inf
+        y, x = np.unravel_index(np.argmax(resp), resp.shape)
+        if resp[y, x] > mejor:
+            mejor, pos = resp[y, x], (float(x), float(y))
+    return pos

@@ -15,7 +15,8 @@ DEFAULTS = {
     "fisiologia": {"t_estimulo_s": None, "ventana_base_s": 2.0, "k_sigma": 3,
                    "n_sostenido": 5, "ventana_mediana": 15,
                    "fraccion_constriccion": 0.9, "fraccion_redilatacion": 0.9},
-    "generar_reporte": True
+    "generar_reporte": True,
+    "anotaciones_manuales": None
 }
 
 
