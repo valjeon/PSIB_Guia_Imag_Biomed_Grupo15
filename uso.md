@@ -1,5 +1,3 @@
 # Estructura general
-* En la carpeta `proyecto ojo` se encuentra el pipeline reproducible con sus instrucciones.
-* En `notebooks` está el análisis realizado para diseñar el pipeline. 
-* En `data/raw` se guardan los videos utilizados para el análisis en los notebooks.
-
+* En la carpeta `proyecto ojo` se encuentra el pipeline reproducible con sus instrucciones (ver `README.md`)
+* Los videos usados están en `proyecto_ojo/data`.

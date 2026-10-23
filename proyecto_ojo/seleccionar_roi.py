@@ -3,7 +3,7 @@
 Uso (desde la carpeta del proyecto):
     python3 seleccionar_roi.py                    # usa video_path de config.yaml, frame central
     python3 seleccionar_roi.py --frame 300        # elegir otro frame
-    python3 seleccionar_roi.py --video "data/raw/Registro B_1.MOV"   # no toca config.yaml
+    python3 seleccionar_roi.py --video "data/Registro B_1.MOV"   # no toca config.yaml
 
 Pasos:
   1) Se abre el frame: arrastrá un rectángulo alrededor del ojo y presioná ENTER.
